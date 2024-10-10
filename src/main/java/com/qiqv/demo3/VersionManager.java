@@ -18,6 +18,12 @@ import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.io.FileUtil;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
 public class VersionManager {
     private final Project project;
     private final List<VirtualFile> savedFiles = new ArrayList<>(); // 用于保存项目中所有文件
@@ -32,6 +38,7 @@ public class VersionManager {
 
         if (projectRoot != null) {
             saveAllFilesInDirectory(projectRoot); // 递归保存所有文件
+            ApplicationManager.getApplication().runWriteAction(() -> createSnapshotFolder(projectRoot)); // 确保在写操作上下文中运行
             showSavedContentUI(projectRoot);  // 显示 UI
         } else {
             System.out.println("无法找到项目根目录");
@@ -41,11 +48,66 @@ public class VersionManager {
     // 递归遍历并保存目录下的所有文件
     private void saveAllFilesInDirectory(VirtualFile directory) {
         for (VirtualFile file : directory.getChildren()) {
-            if (!file.isDirectory()) {
+            if (!file.isDirectory() && !file.getName().equals("snapshot")) {
                 savedFiles.add(file); // 保存文件
-            } else {
-                saveAllFilesInDirectory(file); // 如果是目录，则递归遍历
+            } else if (file.isDirectory() && !file.getName().equals("snapshot")) {
+                saveAllFilesInDirectory(file); // 如果是目录且不是 snapshot，递归遍历
             }
+        }
+    }
+
+    // 在项目根目录下创建 snapshot 文件夹，并在其中创建一个以当前时间命名的文件夹保存当前文件
+    private void createSnapshotFolder(VirtualFile rootDirectory) {
+        try {
+            // 检查 snapshot 文件夹是否存在，不存在则创建
+            VirtualFile snapshotFolder = rootDirectory.findChild("snapshot");
+            if (snapshotFolder == null) {
+                snapshotFolder = rootDirectory.createChildDirectory(this, "snapshot");
+            }
+
+            // 以当前时间命名创建一个新文件夹
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            VirtualFile timeStampedFolder = snapshotFolder.createChildDirectory(this, timeStamp);
+
+            // 复制根目录下的所有文件夹到新的时间文件夹中
+            for (VirtualFile file : rootDirectory.getChildren()) {
+                if (file.isDirectory() && !file.getName().equals("snapshot")) {
+                    copyDirectory(file, timeStampedFolder);
+                } else if (!file.isDirectory()) {
+                    copyFile(file, timeStampedFolder);
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.out.println("无法创建 snapshot 文件夹或复制文件");
+        }
+    }
+
+    // 递归复制文件夹及其内容
+    private void copyDirectory(VirtualFile source, VirtualFile targetDirectory) throws IOException {
+        if (source.getName().equals("snapshot")) {
+            return; // 跳过 snapshot 文件夹
+        }
+
+        VirtualFile newDir = targetDirectory.createChildDirectory(this, source.getName());
+        for (VirtualFile child : source.getChildren()) {
+            if (child.isDirectory()) {
+                copyDirectory(child, newDir); // 递归复制子目录
+            } else {
+                copyFile(child, newDir); // 复制文件
+            }
+        }
+    }
+
+    // 复制单个文件
+    private void copyFile(VirtualFile file, VirtualFile targetDirectory) throws IOException {
+        VirtualFile newFile = targetDirectory.createChildData(this, file.getName());
+        FileDocumentManager fileDocumentManager = FileDocumentManager.getInstance();
+        Document document = fileDocumentManager.getDocument(file);
+
+        if (document != null) {
+            String content = document.getText();
+            FileUtil.writeToFile(new java.io.File(newFile.getPath()), content);
         }
     }
 
@@ -74,14 +136,11 @@ public class VersionManager {
         textArea.setBackground(scheme.getDefaultBackground()); // 设置背景色
 
         // 添加树选择监听器
-        fileTree.addTreeSelectionListener(new TreeSelectionListener() {
-            @Override
-            public void valueChanged(TreeSelectionEvent e) {
-                DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
-                if (selectedNode != null && selectedNode.getUserObject() instanceof VirtualFile) {
-                    VirtualFile selectedFile = (VirtualFile) selectedNode.getUserObject();
-                    loadFileContent(selectedFile, textArea); // 加载文件内容到文本区域
-                }
+        fileTree.addTreeSelectionListener(e -> {
+            DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
+            if (selectedNode != null && selectedNode.getUserObject() instanceof VirtualFile) {
+                VirtualFile selectedFile = (VirtualFile) selectedNode.getUserObject();
+                loadFileContent(selectedFile, textArea); // 加载文件内容到文本区域
             }
         });
 
