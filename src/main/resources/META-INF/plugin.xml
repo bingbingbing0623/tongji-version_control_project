@@ -23,7 +23,6 @@
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-
     </extensions>
 <!--    <extensions defaultExtensionNs="com.intellij">-->
 <!--        &lt;!&ndash; 注册工具窗口工厂 &ndash;&gt;-->
@@ -37,5 +36,13 @@
         <action id="com.demo.ShowProjectNameAction" class="com.qiqv.demo3.MyPlugin" text="CodeTracing">
             <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="About"/>
         </action>
+        <action id="com.qiqv.demo3.ShowVersionHistory" class="com.qiqv.demo3.ShowVersionHistory"
+                text="showVersionHistory">
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="About"/>
+        </action>
     </actions>
+    <applicationListeners>
+        <listener class="com.qiqv.demo3.PluginStart"
+                  topic="com.intellij.openapi.project.ProjectManagerListener"/>
+    </applicationListeners>
 </idea-plugin>

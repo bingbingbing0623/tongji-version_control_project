@@ -1,48 +1,63 @@
 package com.qiqv.demo3;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.colors.EditorFontType;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.editor.colors.EditorColorsManager;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
-
+import com.intellij.util.Alarm;
 
 import javax.swing.*;
-import javax.swing.event.TreeSelectionEvent;
-import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
-import java.util.ArrayList;
-import java.util.List;
-
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.io.FileUtil;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
+// 这个类基本没改，添加了自动保存的两个方法，以及在saveEntireProject中去掉了ui显示（把ui显示单独放在ShowVersionHistory类了）
 public class VersionManager {
     private final Project project;
     private final List<VirtualFile> savedFiles = new ArrayList<>(); // 用于保存项目中所有文件
+    private final Alarm alarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD); // 定时任务执行器
 
     public VersionManager(Project project) {
         this.project = project;
     }
 
+    // 开始定时保存任务
+    public void startAutoSave(long intervalInSeconds) {
+        System.out.println("自动保存begin");
+        alarm.addRequest(this::saveEntireProject, intervalInSeconds * 1000); // 间隔以毫秒为单位
+    }
+
+    // 停止自动保存任务
+    public void stopAutoSave() {
+        System.out.println("自动保存已停止");
+        alarm.cancelAllRequests(); // 取消所有定时任务
+    }
+
     // 点击插件时保存整个项目，并在 UI 中显示内容
     public void saveEntireProject() {
+        System.out.println("项目正在保存");
         VirtualFile projectRoot = project.getBaseDir(); // 获取项目根目录
 
         if (projectRoot != null) {
             saveAllFilesInDirectory(projectRoot); // 递归保存所有文件
-            ApplicationManager.getApplication().runWriteAction(() -> createSnapshotFolder(projectRoot)); // 确保在写操作上下文中运行
-            showSavedContentUI(projectRoot);  // 显示 UI
+            ApplicationManager.getApplication().invokeLater(() -> {
+                ApplicationManager.getApplication().runWriteAction(() -> createSnapshotFolder(projectRoot)); // 在 EDT 中执行写操作
+            });
         } else {
             System.out.println("无法找到项目根目录");
         }
+        // 再次调度下一次保存任务
+        startAutoSave(5); // 继续下一个定时任务，间隔5秒
     }
 
     // 递归遍历并保存目录下的所有文件
@@ -58,6 +73,7 @@ public class VersionManager {
 
     // 在项目根目录下创建 snapshot 文件夹，并在其中创建一个以当前时间命名的文件夹保存当前文件
     private void createSnapshotFolder(VirtualFile rootDirectory) {
+        System.out.println("####rootDirectory"+rootDirectory);
         try {
             // 检查 snapshot 文件夹是否存在，不存在则创建
             VirtualFile snapshotFolder = rootDirectory.findChild("snapshot");
@@ -75,6 +91,7 @@ public class VersionManager {
                     copyDirectory(file, timeStampedFolder);
                 } else if (!file.isDirectory()) {
                     copyFile(file, timeStampedFolder);
+                    System.out.println("####copyfile"+file);
                 }
             }
         } catch (IOException e) {
@@ -112,35 +129,47 @@ public class VersionManager {
     }
 
     // 显示保存的内容在 UI 界面，使用 IntelliJ 的 Editor 组件
-    private void showSavedContentUI(VirtualFile rootDirectory) {
+    public void showSavedContentUI(VirtualFile rootDirectory) {
         // 创建 JFrame 作为主窗口
         JFrame frame = new JFrame("Saved File Content");
-        frame.setSize(800, 600); // 设置窗口大小
+        frame.setSize(1200, 600); // 设置窗口大小
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setLayout(new BorderLayout());
+        frame.setLayout(new GridLayout(1, 3)); // 将布局改为 1 行 3 列
 
         // 创建 JTree 显示项目文件
         JTree fileTree = createFileTree(rootDirectory);
-        frame.add(new JScrollPane(fileTree), BorderLayout.WEST);
+        frame.add(new JScrollPane(fileTree)); // 添加文件树到第一列
 
-        // 创建 JTextArea 显示文件内容
-        JTextArea textArea = new JTextArea();
-        textArea.setEditable(false); // 设置为只读
-        frame.add(new JScrollPane(textArea), BorderLayout.CENTER);
+        // 创建 JTextArea 显示文件内容（第二列）
+        JTextArea textArea1 = new JTextArea();
+        textArea1.setEditable(false); // 设置为只读
+        frame.add(new JScrollPane(textArea1)); // 添加到第二列
+
+        // 创建新的 JTextArea 作为第三列
+        JTextArea textArea2 = new JTextArea();
+        textArea2.setEditable(false); // 设置为只读
+        frame.add(new JScrollPane(textArea2)); // 添加到第三列
 
         // 获取 IntelliJ 的配色方案
         EditorColorsScheme scheme = EditorColorsManager.getInstance().getGlobalScheme();
         Font font = scheme.getFont(EditorFontType.PLAIN); // 获取默认字体
-        textArea.setFont(font); // 设置字体
-        textArea.setForeground(scheme.getDefaultForeground()); // 设置前景色
-        textArea.setBackground(scheme.getDefaultBackground()); // 设置背景色
+
+        // 设置第二列 JTextArea 的字体和颜色
+        textArea1.setFont(font);
+        textArea1.setForeground(scheme.getDefaultForeground()); // 设置前景色
+        textArea1.setBackground(scheme.getDefaultBackground()); // 设置背景色
+
+        // 设置第三列 JTextArea 的字体和颜色（保持一致）
+        textArea2.setFont(font);
+        textArea2.setForeground(scheme.getDefaultForeground());
+        textArea2.setBackground(scheme.getDefaultBackground());
 
         // 添加树选择监听器
         fileTree.addTreeSelectionListener(e -> {
             DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
             if (selectedNode != null && selectedNode.getUserObject() instanceof VirtualFile) {
                 VirtualFile selectedFile = (VirtualFile) selectedNode.getUserObject();
-                loadFileContent(selectedFile, textArea); // 加载文件内容到文本区域
+                loadFileContent(selectedFile, textArea1); // 加载文件内容到第二列的文本区域
             }
         });
 
