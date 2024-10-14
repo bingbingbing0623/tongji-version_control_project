@@ -27,6 +27,12 @@ import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.Patch;
 
+import java.nio.charset.StandardCharsets; // 添加以使用UTF-8编码
+
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 // 这个类基本没改，添加了自动保存的两个方法，以及在saveEntireProject中去掉了ui显示（把ui显示单独放在ShowVersionHistory类了）
 public class VersionManager {
     private final Project project;
@@ -34,7 +40,7 @@ public class VersionManager {
     private final Alarm alarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD); // 定时任务执行器
     private boolean isFirstSave = true; // 标记是否为首次保存
     private boolean isBaseSave = false; // 标记初始版本是否保存
-    private  VirtualFile snapshotDirectory; // 记录snapshot文件夹位置
+    private VirtualFile snapshotDirectory; // 记录snapshot文件夹位置
     private VirtualFile rootFileDirectory; // 记录根文件位置
     private String baseVersionDirectory; // 记录base版本位置
 
@@ -225,7 +231,7 @@ public class VersionManager {
     }
 
 
-    // 显示保存的内容在 UI 界面，使用 IntelliJ 的 Editor 组件
+
     public void showSavedContentUI(VirtualFile rootDirectory) {
         // 创建 JFrame 作为主窗口
         JFrame frame = new JFrame("Saved File Content");
@@ -233,16 +239,23 @@ public class VersionManager {
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLayout(new GridLayout(1, 3)); // 将布局改为 1 行 3 列
 
-        // 创建 JTree 显示项目文件
-        JTree fileTree = createFileTree(rootDirectory);
+        // 获取 snapshot 文件夹作为根目录
+        VirtualFile snapshotFolder = rootDirectory.findChild("snapshot");
+        if (snapshotFolder == null) {
+            System.out.println("未找到 snapshot 文件夹");
+            return;
+        }
+
+        // 创建 JTree 显示 snapshot 文件夹的内容
+        JTree fileTree = createFileTree(snapshotFolder);
         frame.add(new JScrollPane(fileTree)); // 添加文件树到第一列
 
-        // 创建 JTextArea 显示文件内容（第二列）
+        // 创建 JTextArea 显示 .diff 文件内容（第二列）
         JTextArea textArea1 = new JTextArea();
         textArea1.setEditable(false); // 设置为只读
         frame.add(new JScrollPane(textArea1)); // 添加到第二列
 
-        // 创建新的 JTextArea 作为第三列
+        // 创建 JTextArea 显示被修改文件的当前内容（第三列）
         JTextArea textArea2 = new JTextArea();
         textArea2.setEditable(false); // 设置为只读
         frame.add(new JScrollPane(textArea2)); // 添加到第三列
@@ -251,12 +264,11 @@ public class VersionManager {
         EditorColorsScheme scheme = EditorColorsManager.getInstance().getGlobalScheme();
         Font font = scheme.getFont(EditorFontType.PLAIN); // 获取默认字体
 
-        // 设置第二列 JTextArea 的字体和颜色
+        // 设置字体和颜色
         textArea1.setFont(font);
         textArea1.setForeground(scheme.getDefaultForeground()); // 设置前景色
         textArea1.setBackground(scheme.getDefaultBackground()); // 设置背景色
 
-        // 设置第三列 JTextArea 的字体和颜色（保持一致）
         textArea2.setFont(font);
         textArea2.setForeground(scheme.getDefaultForeground());
         textArea2.setBackground(scheme.getDefaultBackground());
@@ -266,7 +278,17 @@ public class VersionManager {
             DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
             if (selectedNode != null && selectedNode.getUserObject() instanceof VirtualFile) {
                 VirtualFile selectedFile = (VirtualFile) selectedNode.getUserObject();
-                loadFileContent(selectedFile, textArea1); // 加载文件内容到第二列的文本区域
+
+                // 显示选中的 .diff 文件内容
+                showDiffFileContent(selectedFile, textArea1); // 在中间显示
+
+                // 显示被 .diff 文件修改的文件的当前内容
+                String modifiedFilePath = getModifiedFilePathFromDiff(selectedFile);
+                if (modifiedFilePath != null) {
+                    showCurrentFileContent(modifiedFilePath, textArea2); // 显示右侧当前文件内容
+                } else {
+                    textArea2.setText("无法找到修改的文件");
+                }
             }
         });
 
@@ -274,18 +296,62 @@ public class VersionManager {
         frame.setVisible(true);
     }
 
-    // 创建项目文件的 JTree
-    private JTree createFileTree(VirtualFile rootDirectory) {
-        DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode(rootDirectory.getName());
-        createTreeNodes(rootDirectory, rootNode);
+    // 显示 .diff 文件的内容到 textArea1
+    private void showDiffFileContent(VirtualFile diffFile, JTextArea textArea) {
+        try {
+            // 读取并显示 .diff 文件内容（使用UTF-8编码）
+            List<String> fileLines = Files.readAllLines(Paths.get(diffFile.getPath()), StandardCharsets.UTF_8);
+            textArea.setText(String.join("\n", fileLines)); // 设置文本内容
+        } catch (IOException e) {
+            textArea.setText("无法加载 .diff 文件内容");
+            e.printStackTrace();
+        }
+    }
+
+    // 生成合并后的内容，不生成实际文件
+    private String getMergedContent(VirtualFile selectedFile) {
+        try {
+            // 获取初版文件路径和内容
+            String originalFilePath = getOriginalFilePath(selectedFile);
+            List<String> originalLines = Files.readAllLines(Paths.get(originalFilePath), StandardCharsets.UTF_8); // 使用UTF-8编码读取文件
+
+            // 获取当前文件内容
+            List<String> currentLines = Files.readAllLines(Paths.get(selectedFile.getPath()), StandardCharsets.UTF_8); // 使用UTF-8编码读取文件
+
+            // 生成差异patch
+            Patch<String> patch = DiffUtils.diff(originalLines, currentLines);
+
+            // 应用patch生成合并后的内容
+            List<String> mergedLines = DiffUtils.patch(originalLines, patch);
+
+            // 返回合并后的内容作为字符串
+            return String.join("\n", mergedLines);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "无法生成合并后的内容";
+        }
+    }
+
+    // 获取初版文件的路径
+    private String getOriginalFilePath(VirtualFile selectedFile) {
+        // 假设初版文件保存在snapshot目录中，构造对应路径
+        String relativePath = selectedFile.getPath().substring(rootFileDirectory.getPath().length() + 1);
+        return snapshotDirectory.getPath() + "/" + relativePath;
+    }
+
+    // 创建项目文件的 JTree 仅显示 snapshot 文件夹的内容
+    private JTree createFileTree(VirtualFile snapshotDirectory) {
+        DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode(snapshotDirectory.getName());
+        createTreeNodes(snapshotDirectory, rootNode); // 递归创建 snapshot 文件夹下的文件节点
 
         DefaultTreeModel treeModel = new DefaultTreeModel(rootNode);
         JTree fileTree = new JTree(treeModel);
-        fileTree.setRootVisible(false); // 隐藏根节点
+        fileTree.setRootVisible(true); // 显示 snapshot 作为根节点
         return fileTree;
     }
 
-    // 递归创建 JTree 的节点
+    // 递归创建 snapshot 文件夹的 JTree 节点
     private void createTreeNodes(VirtualFile directory, DefaultMutableTreeNode parentNode) {
         for (VirtualFile file : directory.getChildren()) {
             DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(file) {
@@ -302,15 +368,37 @@ public class VersionManager {
         }
     }
 
-    // 加载选中文件的内容
-    private void loadFileContent(VirtualFile file, JTextArea textArea) {
-        FileDocumentManager fileDocumentManager = FileDocumentManager.getInstance();
-        Document document = fileDocumentManager.getDocument(file);
+    // 解析 .diff 文件，获取被修改文件的路径
+    private String getModifiedFilePathFromDiff(VirtualFile diffFile) {
+        try {
+            List<String> diffLines = Files.readAllLines(Paths.get(diffFile.getPath()), StandardCharsets.UTF_8);
 
-        if (document != null) {
-            textArea.setText(document.getText()); // 设置文本内容
-        } else {
-            textArea.setText("无法加载文件内容"); // 文件内容为空
+            // 使用正则表达式匹配被修改的文件路径 (例如 +++ b/path/to/file.java)
+            Pattern pattern = Pattern.compile("^\\+\\+\\+\\s+b/(.*)$");
+            for (String line : diffLines) {
+                Matcher matcher = pattern.matcher(line);
+                if (matcher.find()) {
+                    // 提取被修改文件的路径
+                    String relativePath = matcher.group(1);
+                    // 构造完整的文件路径
+                    return rootFileDirectory.getPath() + "/" + relativePath;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null; // 如果未找到文件路径，返回 null
+    }
+
+    // 显示被修改文件的当前内容到 textArea2
+    private void showCurrentFileContent(String filePath, JTextArea textArea) {
+        try {
+            // 读取并显示当前文件内容（使用UTF-8编码）
+            List<String> fileLines = Files.readAllLines(Paths.get(filePath), StandardCharsets.UTF_8);
+            textArea.setText(String.join("\n", fileLines)); // 设置文本内容
+        } catch (IOException e) {
+            textArea.setText("无法加载当前文件内容");
+            e.printStackTrace();
         }
     }
 }
