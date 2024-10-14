@@ -266,9 +266,16 @@ public class VersionManager {
             DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
             if (selectedNode != null && selectedNode.getUserObject() instanceof VirtualFile) {
                 VirtualFile selectedFile = (VirtualFile) selectedNode.getUserObject();
-                loadFileContent(selectedFile, textArea1); // 加载文件内容到第二列的文本区域
+                // 解析了 .diff 文件获取了路径
+                String diffFilePath = selectedFile.getPath();
+                // 合并文件内容并显示到第二列
+                showFileContent(diffFilePath, textArea1, 1);
+                //显示当前内容在第三列
+                showFileContent(diffFilePath, textArea2, 2);
+
             }
         });
+
 
         // 显示窗口
         frame.setVisible(true);
@@ -302,15 +309,30 @@ public class VersionManager {
         }
     }
 
-    // 加载选中文件的内容
-    private void loadFileContent(VirtualFile file, JTextArea textArea) {
-        FileDocumentManager fileDocumentManager = FileDocumentManager.getInstance();
-        Document document = fileDocumentManager.getDocument(file);
-
-        if (document != null) {
-            textArea.setText(document.getText()); // 设置文本内容
-        } else {
-            textArea.setText("无法加载文件内容"); // 文件内容为空
+    //根据传进来的textAreaNum参数来决定显示，修改之后的文件，或者是当前文件
+    public void showFileContent(String diffFilePath, JTextArea textArea, int textAreaNum) {
+        // 解析 .diff 文件
+        showdiff.Diff diff = showdiff.parseDiffFile(diffFilePath);
+        // 读取初始文件内容
+        String originalContent = showdiff.readFileContent(diff.originalFilePath);
+        String targetContent = showdiff.readFileContent(diff.targetFilePath);
+        if (originalContent == null) {
+            textArea.setText("无法读取初始文件内容");
+            return;
         }
+        if (textAreaNum == 1) {
+            // 应用 .diff 差异，生成新文件内容
+            String newContent = showdiff.applyDiff(originalContent, diff.diffLines);
+            // 显示最终的合成文件内容到第三列
+            textArea.setText(newContent);
+        }
+        else {
+            textArea.setText(targetContent);
+        }
+
+
+
     }
+
+
 }

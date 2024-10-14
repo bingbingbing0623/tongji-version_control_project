@@ -33,9 +33,6 @@
 <!--        />-->
 <!--    </extensions>-->
     <actions>
-        <action id="com.demo.ShowProjectNameAction" class="com.qiqv.demo3.MyPlugin" text="CodeTracing">
-            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="About"/>
-        </action>
         <action id="com.qiqv.demo3.ShowVersionHistory" class="com.qiqv.demo3.ShowVersionHistory"
                 text="showVersionHistory">
             <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="About"/>
