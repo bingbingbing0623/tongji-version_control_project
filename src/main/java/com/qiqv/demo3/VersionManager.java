@@ -38,11 +38,13 @@ public class VersionManager {
     private final Project project;
     private final List<VirtualFile> savedFiles = new ArrayList<>(); // 用于保存项目中所有文件
     private final Alarm alarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD); // 定时任务执行器
-    private boolean isFirstSave = true; // 标记是否为首次保存
+    private boolean saveWholeFiles = true; // 标记是否保存整个项目文件
     private boolean isBaseSave = false; // 标记初始版本是否保存
     private VirtualFile snapshotDirectory; // 记录snapshot文件夹位置
     private VirtualFile rootFileDirectory; // 记录根文件位置
     private String baseVersionDirectory; // 记录base版本位置
+    private VirtualFile timeStampedFolder;
+
 
     public VersionManager(Project project) {
         this.project = project;
@@ -62,12 +64,11 @@ public class VersionManager {
     public void saveEntireProject() {
         VirtualFile projectRoot = project.getBaseDir(); // 获取项目根目录
         rootFileDirectory = projectRoot;
-
         if (projectRoot != null) {
             // 在首次保存时直接保存所有文件
-            if (isFirstSave) {
+            if (saveWholeFiles) {
                 saveAllFilesInDirectory(projectRoot); // 递归保存所有文件
-                isFirstSave = false; // 更新标记为非首次保存
+                saveWholeFiles = false; // 更新标记为
                 ApplicationManager.getApplication().invokeLater(() -> {
                     ApplicationManager.getApplication().runWriteAction(() -> createSnapshotFolder(projectRoot)); // 在 EDT 中执行写操作
                 });
@@ -152,6 +153,7 @@ public class VersionManager {
 
     // 生成文件差异并保存为 unified diff 格式
     private void generateDiffFiles(VirtualFile rootDirectory) {
+        boolean tag = true; // 用于记录
         try {
             // 遍历项目根目录下的所有文件和子目录
             for (VirtualFile file : rootDirectory.getChildren()) {
@@ -163,7 +165,7 @@ public class VersionManager {
                     if(!isBaseSave) {
                         // 获取snapshot文件夹内的所有文件
                         VirtualFile[] snapshotFiles = snapshotDirectory.getChildren();
-                        // 选择第一次打开保存的版本
+                        // 现在获取baseVersion的directory,baseVersion就是snapshot文件夹最后一个文件
                         VirtualFile lastSnapshotFile = snapshotFiles.length > 0 ? snapshotFiles[snapshotFiles.length - 1] : null;
                         baseVersionDirectory = lastSnapshotFile.getPath();
                         isBaseSave = true;
@@ -171,7 +173,6 @@ public class VersionManager {
                         // 用子序列来确定相对位置，方便后面确定originalFilePath
                     String relativePath = file.getPath().substring(rootFileDirectory.getPath().length() + 1);
                     String originalFilePath = baseVersionDirectory + "/" + relativePath; // 原始文件路径
-                    System.out.println("######origin"+originalFilePath);
                     String currentFilePath = file.getPath(); // 当前文件路径
 
                     if (Files.exists(Paths.get( originalFilePath))) {
@@ -179,20 +180,25 @@ public class VersionManager {
                         List<String> currentLines = Files.readAllLines(Paths.get(currentFilePath));
                         // 获得当前版本和base版本的diff内容
                         Patch<String> patch = DiffUtils.diff(originalLines, currentLines);
+                        System.out.println("######currentFilePath" +currentFilePath);
+                        System.out.println("######patch" +patch);
                         if (!patch.getDeltas().isEmpty()) {
                             // 如果有变化，生成 unified diff 文件
                             String diffFileName = file.getName() + ".diff";
                             String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
                             // 创建相应的文件夹，并将diff文件写入文件夹当中
+                            boolean finalTag = tag;// 为了进入lambda函数
                             WriteCommandAction.runWriteCommandAction(project, () -> {
                                 try {
                                     if (!snapshotDirectory.exists()) {
-                                        System.out.println("######### snapshotDirectory 不存在: " + snapshotDirectory);
+                                        System.out.println("snapshotDirectory 不存在: " + snapshotDirectory);
                                     } else {
-                                        VirtualFile timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
+                                        System.out.println("进来准备写了");
+                                        if(finalTag) {
+                                            timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
+                                        }
                                         VirtualFile diffFile = timeStampedFolder.createChildData(this, diffFileName);
                                         String diffContent = generateDiff(originalFilePath, currentFilePath, originalLines, patch);
-                                        System.out.println("######"+diffContent);
                                         FileUtil.writeToFile(new java.io.File(diffFile.getPath()), diffContent);
                                         System.out.println("生成差异文件: " + diffFile.getPath());
                                     }
@@ -201,6 +207,7 @@ public class VersionManager {
                                 }
                             });
                         }
+                        tag = false;
                     }
                 }
             }
@@ -281,7 +288,6 @@ public class VersionManager {
 
                 // 显示选中的 .diff 文件内容
                 showDiffFileContent(selectedFile, textArea1); // 在中间显示
-
                 // 显示被 .diff 文件修改的文件的当前内容
                 String modifiedFilePath = getModifiedFilePathFromDiff(selectedFile);
                 if (modifiedFilePath != null) {
@@ -374,12 +380,13 @@ public class VersionManager {
             List<String> diffLines = Files.readAllLines(Paths.get(diffFile.getPath()), StandardCharsets.UTF_8);
 
             // 使用正则表达式匹配被修改的文件路径 (例如 +++ b/path/to/file.java)
-            Pattern pattern = Pattern.compile("^\\+\\+\\+\\s+b/(.*)$");
+            Pattern pattern = Pattern.compile("^\\+\\+\\+\\s+(.*)$");
             for (String line : diffLines) {
                 Matcher matcher = pattern.matcher(line);
                 if (matcher.find()) {
                     // 提取被修改文件的路径
                     String relativePath = matcher.group(1);
+                    System.out.println("#####relativePath"+relativePath);
                     // 构造完整的文件路径
                     return rootFileDirectory.getPath() + "/" + relativePath;
                 }
