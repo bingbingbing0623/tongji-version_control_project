@@ -7,13 +7,15 @@ import com.intellij.openapi.vfs.VirtualFile;
 // 这个类是负责实例化VersionManager，并且提供获得VersionManager的方法的接口
 //
 public class MainManager {
-    private VersionManager versionManager;
-    private mainwindow mainwindow;
+    private final VersionManager versionManager;
+    private final mainwindow mainwindow;
+    private final MyFileListener myFileListener;
 
     public MainManager(Project project) {
-
         this.versionManager = new VersionManager(project);
         this.mainwindow = new mainwindow();
+        this.myFileListener = new MyFileListener(this.versionManager);//将versionManager引入，并实例化监听器
+        this.myFileListener.registerListener(this.myFileListener);//注册监听器
     }
 
     public void startAutoSave() {

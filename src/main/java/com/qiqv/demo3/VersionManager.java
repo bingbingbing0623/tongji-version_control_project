@@ -46,6 +46,7 @@ public class VersionManager {
     private boolean saveWholeFiles = true; // 标记是否保存整个项目文件
     private boolean isBaseSave = false; // 标记初始版本是否保存
     private boolean tryNewSave = false;
+    private boolean hasDeleteFile = false;
     private VirtualFile snapshotDirectory; // 记录snapshot文件夹位置
     private VirtualFile rootFileDirectory; // 记录根文件位置
     private String baseVersionDirectory; // 记录base版本位置
@@ -58,6 +59,11 @@ public class VersionManager {
 
     public Project getProject() {
         return project;
+    }
+
+    public void setHasDeleteFile(boolean tag) {
+        this.hasDeleteFile = tag;
+        System.out.println("hasDeleteFile变成了" + this.hasDeleteFile);
     }
 
     // 开始定时保存任务
@@ -214,7 +220,7 @@ public class VersionManager {
                 System.out.println("######当前文件路径: " + currentFilePath);
                 // 判断文件是否为新建的
                 System.out.println("######判断是否存在"+file.getName());
-                if (!isBaseSave || findFileInDirectory(baseVersionPath, file.getName())) {
+                if (  (hasDeleteFile==false) && (!isBaseSave || findFileInDirectory(baseVersionPath, file.getName())==true)   ) {
                     // 将baseVersion保存
                     if (!isBaseSave) {
                         VirtualFile versionFolder = snapshotDirectory.findChild("version");// 10.15
@@ -304,6 +310,7 @@ public class VersionManager {
                     echoTag = false;
                     tryNewSave = true;
                     saveWholeFiles = true;
+                    hasDeleteFile = false;
                     return;
                 }
             }
