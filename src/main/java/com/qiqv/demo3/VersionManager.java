@@ -122,12 +122,17 @@ public class VersionManager {
             VirtualFile snapshotFolder = rootDirectory.findChild("snapshot");
             if (snapshotFolder == null) {
                 snapshotFolder = rootDirectory.createChildDirectory(this, "snapshot");
+                VirtualFile versionFolder = snapshotFolder.createChildDirectory(this, "version");// 10.15创建version文件夹
+                VirtualFile diffFolder = snapshotFolder.createChildDirectory(this, "diff");// 10.15创建diff文件夹
             }
             snapshotDirectory = snapshotFolder;
 
             // 以当前时间命名创建一个新文件夹
             String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-            VirtualFile timeStampedFolder = snapshotFolder.createChildDirectory(this, timeStamp);
+            String folderName = "Version_" + timeStamp;  // 添加 "Version" 前缀
+            VirtualFile versionFolder = snapshotDirectory.findChild("version");// 10.15
+            VirtualFile timeStampedFolder = versionFolder.createChildDirectory(this, folderName);//10.15
+            //VirtualFile timeStampedFolder = snapshotFolder.createChildDirectory(this, folderName);
 
             // 复制根目录下的所有文件夹到新的时间文件夹中
             for (VirtualFile file : rootDirectory.getChildren()) {
@@ -212,8 +217,10 @@ public class VersionManager {
                 if (!isBaseSave || findFileInDirectory(baseVersionPath, file.getName())) {
                     // 将baseVersion保存
                     if (!isBaseSave) {
+                        VirtualFile versionFolder = snapshotDirectory.findChild("version");// 10.15
                         // 获取snapshot文件夹内的所有文件
-                        VirtualFile[] snapshotFiles = snapshotDirectory.getChildren();
+                        VirtualFile[] snapshotFiles = versionFolder.getChildren();//10.15
+                        //VirtualFile[] snapshotFiles = snapshotDirectory.getChildren();
                         // 现在获取baseVersion的directory, baseVersion就是snapshot文件夹最后一个文件
                         VirtualFile lastSnapshotFile = snapshotFiles.length > 0 ? snapshotFiles[snapshotFiles.length - 1] : null;
                         baseVersionDirectory = lastSnapshotFile.getPath();
@@ -238,8 +245,9 @@ public class VersionManager {
                             if (!patch.getDeltas().isEmpty()) {
                                 System.out.println("######有改动了");
                                 // 如果有变化，生成 unified diff 文件
-                                String diffFileName = file.getName() + ".diff";
-                                String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+                                String diffFileName = file.getName() + ".diff";//10.15
+                                String pureTimeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());//10.15
+                                String timeStamp = "diff_" + pureTimeStamp;
                                 // 使用AtomicBoolean来替代echoTag
                                 AtomicBoolean finalTag = new AtomicBoolean(echoTag); // 替代finalTag
                                 WriteCommandAction.runWriteCommandAction(project, () -> {
@@ -249,7 +257,9 @@ public class VersionManager {
                                         } else {
                                             System.out.println("进来准备写了");
                                             if (finalTag.get()) {  // 使用finalTag.get()检查其值
-                                                timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
+                                                VirtualFile diffFolder = snapshotDirectory.findChild("diff");// 10.15
+                                                timeStampedFolder = diffFolder.createChildDirectory(this, timeStamp);//10.15
+                                                //timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
                                                 finalTag.set(false);  // 修改finalTag的值
                                             }
                                             System.out.println("timeStampedFolder"+timeStampedFolder);
