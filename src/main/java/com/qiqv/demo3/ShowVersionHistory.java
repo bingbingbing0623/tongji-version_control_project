@@ -4,8 +4,9 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-
+//
 // 这个类是显示UI界面
+//
 public class ShowVersionHistory extends AnAction {
 
     @Override

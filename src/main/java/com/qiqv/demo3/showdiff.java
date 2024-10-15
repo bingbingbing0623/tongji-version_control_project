@@ -9,7 +9,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
-
+//
+//这个类用于解析生成的diff文件
 
 public class showdiff {
     public static class Diff {

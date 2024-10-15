@@ -3,12 +3,17 @@ package com.qiqv.demo3;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
+//
 // 这个类是负责实例化VersionManager，并且提供获得VersionManager的方法的接口
+//
 public class MainManager {
     private VersionManager versionManager;
+    private mainwindow mainwindow;
 
     public MainManager(Project project) {
+
         this.versionManager = new VersionManager(project);
+        this.mainwindow = new mainwindow();
     }
 
     public void startAutoSave() {
@@ -25,7 +30,7 @@ public class MainManager {
 
     public void showUI(VirtualFile directory){
         if (versionManager != null) {
-            versionManager.showSavedContentUI(directory);
+            mainwindow.showSavedContentUI(directory,versionManager.getProject());
         }
     }
 

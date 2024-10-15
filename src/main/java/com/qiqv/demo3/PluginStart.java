@@ -4,8 +4,9 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManagerListener;
 import org.jetbrains.annotations.NotNull;
 
-
+//
 // 这个类是项目启动的时候触发，创建MainManager实例以及开启自动保存
+//
 public class PluginStart implements ProjectManagerListener {
     private static MainManager mainManager;
 

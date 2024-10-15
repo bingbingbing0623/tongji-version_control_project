@@ -4,6 +4,9 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.List;
+//
+//    这个类实现文件历史版本恢复
+//
 
 public class recover {
     public static void writeFile(List<String> content, String filePath) {
