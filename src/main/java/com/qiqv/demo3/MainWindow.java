@@ -198,7 +198,10 @@ public class MainWindow
         ShowDiff.Diff diff = ShowDiff.parseDiffFile(diffFilePath);
         // 读取初始文件内容
         String originalContent = ShowDiff.readFileContent(diff.originalFilePath);
+
         String targetContent = ShowDiff.readFileContent(diff.targetFilePath);
+
+
         if (originalContent == null) {
             return null;
         }
@@ -211,10 +214,13 @@ public class MainWindow
             return newContentLine;
         }
         else {
+            File targetFile = new File(diff.targetFilePath);
+            if (!targetFile.exists()) {
+                textArea.setText("The file has been deleted.");
+                return null; // 或者可以返回一个空列表，视你的需求而定
+            }
             List<String> targetContentLine = Arrays.asList(targetContent.split("\n"));
             textArea.setText(targetContent);
-
-
             return targetContentLine;
         }
     }//sh

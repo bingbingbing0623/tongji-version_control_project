@@ -17,7 +17,7 @@ public class MainManager {
 
     public void startAutoSave() {
         if (versionManager != null) {
-            versionManager.startAutoSave(10); // 开始自动保存
+            versionManager.startAutoSave(5); // 开始自动保存
         }
     }
 

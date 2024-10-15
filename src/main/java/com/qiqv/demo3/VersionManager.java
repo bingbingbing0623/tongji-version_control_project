@@ -89,7 +89,7 @@ public class VersionManager {
             System.out.println("无法找到项目根目录");
         }
         // 再次调度下一次保存任务
-        startAutoSave(10); // 继续下一个定时任务，间隔5秒
+        startAutoSave(5); // 继续下一个定时任务，间隔5秒
     }
 
     // 递归遍历并保存目录下的所有文件
