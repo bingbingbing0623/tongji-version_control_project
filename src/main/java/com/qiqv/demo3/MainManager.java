@@ -3,9 +3,6 @@ package com.qiqv.demo3;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
-//
-// 这个类是负责实例化VersionManager，并且提供获得VersionManager的方法的接口
-//
 public class MainManager {
     private final VersionManager versionManager;
     private final mainwindow mainwindow;

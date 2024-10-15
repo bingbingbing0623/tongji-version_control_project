@@ -3,32 +3,17 @@ package com.qiqv.demo3;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.colors.EditorColorsManager;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
-import com.intellij.openapi.editor.colors.EditorFontType;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Alarm;
 
-import javax.swing.*;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultHighlighter;
-import javax.swing.text.Highlighter;
-import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.TreePath;
-import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -37,16 +22,14 @@ import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.Patch;
 
-
-// 这个类基本没改，添加了自动保存的两个方法，以及在saveEntireProject中去掉了ui显示（把ui显示单独放在ShowVersionHistory类了）
 public class VersionManager {
     private final Project project;
     private final List<VirtualFile> savedFiles = new ArrayList<>(); // 用于保存项目中所有文件
     private final Alarm alarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD); // 定时任务执行器
     private boolean saveWholeFiles = true; // 标记是否保存整个项目文件
     private boolean isBaseSave = false; // 标记初始版本是否保存
-    private boolean tryNewSave = false;
-    private boolean hasDeleteFile = false;
+    private boolean tryNewSave = false; // 标记是否尝试重新保存base版本
+    private boolean hasDeleteFile = false; // 标记是否删除文件
     private VirtualFile snapshotDirectory; // 记录snapshot文件夹位置
     private VirtualFile rootFileDirectory; // 记录根文件位置
     private String baseVersionDirectory; // 记录base版本位置
@@ -63,7 +46,6 @@ public class VersionManager {
 
     public void setHasDeleteFile(boolean tag) {
         this.hasDeleteFile = tag;
-        System.out.println("hasDeleteFile变成了" + this.hasDeleteFile);
     }
 
     // 开始定时保存任务
@@ -128,8 +110,8 @@ public class VersionManager {
             VirtualFile snapshotFolder = rootDirectory.findChild("snapshot");
             if (snapshotFolder == null) {
                 snapshotFolder = rootDirectory.createChildDirectory(this, "snapshot");
-                VirtualFile versionFolder = snapshotFolder.createChildDirectory(this, "version");// 10.15创建version文件夹
-                VirtualFile diffFolder = snapshotFolder.createChildDirectory(this, "diff");// 10.15创建diff文件夹
+                VirtualFile versionFolder = snapshotFolder.createChildDirectory(this, "version");
+                VirtualFile diffFolder = snapshotFolder.createChildDirectory(this, "diff");
             }
             snapshotDirectory = snapshotFolder;
 
@@ -205,35 +187,32 @@ public class VersionManager {
 
     // 生成文件差异并保存为 unified diff 格式
     private void generateDiffFiles(VirtualFile rootDirectory) {
-        boolean echoTag = true; // 用于记录每一轮轮内的时间戳文件
+        boolean echoTag = true; // 用于标记每一次新的遍历是否开始
         try {
-            // 遍历项目根目录下的所有文件和子目录
             for (VirtualFile file : rootDirectory.getChildren()) {
-                if(file.getName().equals("snapshot") || file.getName().equals(".gitignore") || file.getName().equals(".idea")){
+                // 对于系统文件或者snapshot文件直接continue
+                if(file.getName().equals("snapshot") || file.getName().equals(".gitignore") || file.getName().equals(".idea") || file.getName().equals("compare")) {
                     continue;
                 }
-                String relativePath = file.getPath().substring(rootFileDirectory.getPath().length() + 1);
-
                 // 用子序列来确定相对位置，方便后面确定originalFilePath
+                String relativePath = file.getPath().substring(rootFileDirectory.getPath().length() + 1);
                 String originalFilePath = baseVersionDirectory + "/" + relativePath; // 原始文件路径
                 String currentFilePath = file.getPath(); // 当前文件路径
-                System.out.println("######当前文件路径: " + currentFilePath);
-                // 判断文件是否为新建的
-                System.out.println("######判断是否存在"+file.getName());
+                // 判断是否存在删除文件的情况，以及判断当前文件是否为新建的
+                // 当文件存在删除的时候直接执行else语句，当前文件有新建的时候执行else语句，其余情况执行if语句
                 if (  (hasDeleteFile==false) && (!isBaseSave || findFileInDirectory(baseVersionPath, file.getName())==true)   ) {
-                    // 将baseVersion保存
+                    // 将整个项目进行保存作为baseVersion版本
                     if (!isBaseSave) {
-                        VirtualFile versionFolder = snapshotDirectory.findChild("version");// 10.15
+                        VirtualFile versionFolder = snapshotDirectory.findChild("version");
                         // 获取snapshot文件夹内的所有文件
-                        VirtualFile[] snapshotFiles = versionFolder.getChildren();//10.15
-                        //VirtualFile[] snapshotFiles = snapshotDirectory.getChildren();
-                        // 现在获取baseVersion的directory, baseVersion就是snapshot文件夹最后一个文件
+                        VirtualFile[] snapshotFiles = versionFolder.getChildren();
+                        // 现在获取baseVersion的directory, baseVersion就是文件夹最后一个文件
                         VirtualFile lastSnapshotFile = snapshotFiles.length > 0 ? snapshotFiles[snapshotFiles.length - 1] : null;
                         baseVersionDirectory = lastSnapshotFile.getPath();
                         baseVersionPath = lastSnapshotFile;
                         isBaseSave = true;
                     }
-                    // 对file进行判断，判断file是目录还是文件，并且不考虑.gitignore和.idea的变化
+                    // 对file进行判断，判断file是目录还是文件。如果是目录则遍历，不是则进行版本对比
                     if (file.isDirectory() ) {
                         generateDiffFiles(file); // 递归遍历子目录
                         if (tryNewSave) {
@@ -242,33 +221,29 @@ public class VersionManager {
                         }
                     } else if (!file.isDirectory() ) {
                         if (Files.exists(Paths.get(originalFilePath))) {
+                            // 获得相同文件之前版本和当前版本的内容
                             List<String> originalLines = Files.readAllLines(Paths.get(originalFilePath));
                             List<String> currentLines = Files.readAllLines(Paths.get(currentFilePath));
                             // 获得当前版本和base版本的diff内容
                             Patch<String> patch = DiffUtils.diff(originalLines, currentLines);
-                            System.out.println("######currentFilePath: " + currentFilePath);
-                            System.out.println("######patch: " + patch);
                             if (!patch.getDeltas().isEmpty()) {
-                                System.out.println("######有改动了");
                                 // 如果有变化，生成 unified diff 文件
-                                String diffFileName = file.getName() + ".diff";//10.15
-                                String pureTimeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());//10.15
+                                String diffFileName = file.getName() + ".diff";
+                                String pureTimeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
                                 String timeStamp = "diff_" + pureTimeStamp;
-                                // 使用AtomicBoolean来替代echoTag
+                                // 由于labmad中不能修改变量，此处使用AtomicBoolean来替代echoTag
                                 AtomicBoolean finalTag = new AtomicBoolean(echoTag); // 替代finalTag
+                                // 生成差异文件
                                 WriteCommandAction.runWriteCommandAction(project, () -> {
                                     try {
                                         if (!snapshotDirectory.exists()) {
                                             System.out.println("snapshotDirectory 不存在: " + snapshotDirectory);
                                         } else {
-                                            System.out.println("进来准备写了");
                                             if (finalTag.get()) {  // 使用finalTag.get()检查其值
-                                                VirtualFile diffFolder = snapshotDirectory.findChild("diff");// 10.15
-                                                timeStampedFolder = diffFolder.createChildDirectory(this, timeStamp);//10.15
-                                                //timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
+                                                VirtualFile diffFolder = snapshotDirectory.findChild("diff");
+                                                timeStampedFolder = diffFolder.createChildDirectory(this, timeStamp);
                                                 finalTag.set(false);  // 修改finalTag的值
                                             }
-                                            System.out.println("timeStampedFolder"+timeStampedFolder);
                                             VirtualFile diffFile = timeStampedFolder.createChildData(this, diffFileName);
                                             String diffContent = generateDiff(originalFilePath, currentFilePath, originalLines, patch);
                                             FileUtil.writeToFile(new java.io.File(diffFile.getPath()), diffContent);
@@ -281,7 +256,6 @@ public class VersionManager {
                                 // 由lumbda当中的finaltag确定是否修改echotag的值
                                 if(!finalTag.get()) {
                                     echoTag = false; // 第一个diff生成后，时间戳文件夹固定
-                                    System.out.println("换了一次echotag现在是"+echoTag);
                                 }
                             }
                         }
@@ -289,9 +263,6 @@ public class VersionManager {
                 }
                 // 检测到当前项目有新增文件或者文件夹，终止当前生成diff文件，生成新的baseversion
                 else {
-                    System.out.println("#######检测到新增文件");
-                    System.out.println("#######baseaVersionDirectory: " + baseVersionDirectory);
-                    System.out.println("#######文件名"+file.getName());
                     WriteCommandAction.runWriteCommandAction(project, () -> {
                         //删除当前的timeStampedFolder，终止当前，重置参数
                         try {
@@ -332,7 +303,7 @@ public class VersionManager {
                 currentFileName,   // 当前文件名
                 originalLines,     // 原始文件内容
                 patch,             // Patch 对象
-                1                  // 上下文行数，一般为 3
+                1                  // 上下文行数，
         );
 
         // 将生成的 diff 列表合并为单个字符串

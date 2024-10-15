@@ -11,7 +11,7 @@ public class PluginStart implements ProjectManagerListener {
     private static MainManager mainManager;
 
     @Override
-    // 这里显示移除了但是还能接着用（
+    // 这里显示移除了不影响正常使用
     public void projectOpened (@NotNull Project project) {
         if(project != null) {
             mainManager = new MainManager(project);
