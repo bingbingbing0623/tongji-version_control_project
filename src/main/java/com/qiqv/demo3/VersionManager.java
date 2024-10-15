@@ -13,6 +13,9 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Alarm;
 
 import javax.swing.*;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
@@ -21,11 +24,13 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.Patch;
+
 
 // 这个类基本没改，添加了自动保存的两个方法，以及在saveEntireProject中去掉了ui显示（把ui显示单独放在ShowVersionHistory类了）
 public class VersionManager {
@@ -162,7 +167,7 @@ public class VersionManager {
                         baseVersionDirectory = lastSnapshotFile.getPath();
                         isBaseSave = true;
                     }
-                        // 用子序列来确定相对位置，方便后面确定originalFilePath
+                    // 用子序列来确定相对位置，方便后面确定originalFilePath
                     String relativePath = file.getPath().substring(rootFileDirectory.getPath().length() + 1);
                     String originalFilePath = baseVersionDirectory + "/" + relativePath; // 原始文件路径
                     System.out.println("######origin"+originalFilePath);
@@ -190,8 +195,8 @@ public class VersionManager {
                                         FileUtil.writeToFile(new java.io.File(diffFile.getPath()), diffContent);
                                         System.out.println("生成差异文件: " + diffFile.getPath());
                                     }
-                            } catch (IOException e) {
-                                e.printStackTrace();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
                                 }
                             });
                         }
@@ -268,10 +273,21 @@ public class VersionManager {
                 VirtualFile selectedFile = (VirtualFile) selectedNode.getUserObject();
                 // 解析了 .diff 文件获取了路径
                 String diffFilePath = selectedFile.getPath();
-                // 合并文件内容并显示到第二列
-                showFileContent(diffFilePath, textArea1, 1);
-                //显示当前内容在第三列
-                showFileContent(diffFilePath, textArea2, 2);
+                // 合并文件内容
+                List<String> newContentLine = showFileContent(diffFilePath,textArea1,1);
+                //当前内容
+                List<String> targetContentLine = showFileContent(diffFilePath,textArea2,2);
+                generateNewDiffForDisplay(newContentLine, targetContentLine);
+                // 读取 diff 文件并解析差异
+                showdiff.Diff diff = showdiff.parseDiffFile("C:/Users/lrbde/IdeaProjects/test1/src/difference.diff");
+                List<String> diffLinesCompare =diff.diffLines;
+                // 高亮显示文件内容的差异
+                try {
+                    highlightDifferences(newContentLine, targetContentLine, diffLinesCompare, textArea1, textArea2);
+                } catch (BadLocationException ex) {
+                    throw new RuntimeException(ex);
+                }
+
 
             }
         });
@@ -309,30 +325,126 @@ public class VersionManager {
         }
     }
 
-    //根据传进来的textAreaNum参数来决定显示，修改之后的文件，或者是当前文件
-    public void showFileContent(String diffFilePath, JTextArea textArea, int textAreaNum) {
+    //传出来两个文件的包含每一行内容的List
+    public List<String> showFileContent(String diffFilePath,  JTextArea textArea,int textAreaNum) {
         // 解析 .diff 文件
         showdiff.Diff diff = showdiff.parseDiffFile(diffFilePath);
         // 读取初始文件内容
         String originalContent = showdiff.readFileContent(diff.originalFilePath);
         String targetContent = showdiff.readFileContent(diff.targetFilePath);
         if (originalContent == null) {
-            textArea.setText("无法读取初始文件内容");
-            return;
+            return null;
         }
         if (textAreaNum == 1) {
             // 应用 .diff 差异，生成新文件内容
             String newContent = showdiff.applyDiff(originalContent, diff.diffLines);
-            // 显示最终的合成文件内容到第三列
+            List<String> newContentLine = Arrays.asList(newContent.split("\n"));
             textArea.setText(newContent);
+            // 显示最终的合成文件内容
+            return newContentLine;
         }
         else {
+            List<String> targetContentLine = Arrays.asList(targetContent.split("\n"));
             textArea.setText(targetContent);
-        }
 
+
+            return targetContentLine;
+        }
+    }//sh
+
+    //生成新的.diff文件
+    public void generateNewDiffForDisplay(List<String> newContent, List<String> TargetContent) {
+        // 获得当前版本和base版本的diff内容
+        System.out.printf("###进入generateNewDiffForDisplay方法\n");
+        Patch<String> patch = DiffUtils.diff(newContent, TargetContent);
+        System.out.printf("###对比两个不同的list结束\n");
+        System.out.printf("###进入if条件判断\n");
+        // 如果有变化，生成 unified diff 文件
+        String diffFileName = "comparement.diff";
+
+        // 创建相应的文件夹，并将diff文件写入文件夹当中
+        WriteCommandAction.runWriteCommandAction(project, () -> {
+            try {
+                System.out.printf("###进入try\n");
+                if (!snapshotDirectory.exists()) {
+                    System.out.println("######### snapshotDirectory 不存在: " + snapshotDirectory);
+                } else {
+                    //String diffContent = generateDiff(originalFilePath, currentFilePath, originalLines, patch);
+                    System.out.printf("###进入生成的步骤\n");
+
+                    // 使用 DiffUtils 来生成统一 diff
+                    List<String> unifiedDiff = UnifiedDiffUtils.generateUnifiedDiff(
+                            "originalFileName",  // 原始文件名
+                            "currentFileName",   // 当前文件名
+                            newContent,     // 原始文件内容
+                            patch,             // Patch 对象
+                            1                  // 上下文行数，一般为 3
+                    );
+
+                    // 将生成的 diff 列表合并为单个字符串
+                    String diffContentForDisplay = String.join("\n", unifiedDiff);
+                    System.out.printf("###生成了diff文件\n");
+                    FileUtil.writeToFile(new java.io.File("C:/Users/lrbde/IdeaProjects/test1/src/difference.diff"), diffContentForDisplay);
+
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
 
 
     }
+    private void highlightDifferences(List<String> file1Lines, List<String> file2Lines, List<String> diffLines, JTextArea textArea1, JTextArea textArea2) throws BadLocationException {
+        Highlighter highlighter1 = textArea1.getHighlighter();
+        Highlighter highlighter2 = textArea2.getHighlighter();
 
+        int pos1 = 0;  // 记录第一个文件在 JTextArea 中的偏移位置
+        int pos2 = 0;  // 记录第二个文件在 JTextArea 中的偏移位置
+        int lineIndex1=0;
+        int lineIndex2=0;
+        for (String diffLine : diffLines) {
+            // 解析 diff 文件中的差异信息
+            if (diffLine.startsWith("@@")) {
+                String[] parts = diffLine.split(" ");
+                String originalInfo1 = parts[1]; // 获取原始文件的行信息
+                String[] originalRange1 = originalInfo1.substring(1).split(",");
+                lineIndex1 = Integer.parseInt(originalRange1[0]); // 获取修改的起始行号（数组从0开始）
+                String originalInfo2 = parts[2]; // 获取原始文件的行信息
+                String[] originalRange2 = originalInfo2.substring(1).split(",");
+                lineIndex2 = Integer.parseInt(originalRange2[0]); // 获取修改的起始行号（数组从0开始）
+                // diff 行，解析出修改范围
+                continue;
+            }
+            else if (diffLine.startsWith("-")) {
+                // 删除的行，左边高亮红色
+                int startPos = calculateStartPos(file1Lines,lineIndex1);
+                int endPos = startPos + diffLine.length();
+                highlighter1.addHighlight(startPos, endPos, new DefaultHighlighter.DefaultHighlightPainter(Color.RED));
+                pos1 += 1;
+                lineIndex1++;
+                continue;
+            } else if (diffLine.startsWith("+")) {
 
+                // 新增的行，右边高亮绿色
+                int startPos2 = calculateStartPos(file2Lines,lineIndex2);
+                int endPos2 = startPos2 + diffLine.length();
+                System.out.println("Highlighting from " + startPos2 + " to " + endPos2 + " for content: " + diffLine.length());
+                highlighter2.addHighlight(startPos2, endPos2, new DefaultHighlighter.DefaultHighlightPainter(Color.GREEN));
+                pos2 +=1;
+                lineIndex2++;
+                continue;
+            }
+        }
+
+    }
+    public int calculateStartPos(List<String> lines, int lineIndex) {
+        int startPos = 0;
+
+        // 遍历 lineIndex 之前的所有行，累加每一行的长度和换行符
+        for (int i = 0; i < lineIndex; i++) {
+            startPos += lines.get(i).length();  // 加上该行的字符数
+            startPos += 1;  // 换行符的长度，一般为 1（\n）
+        }
+        return startPos;  // 返回第 lineIndex 行的起始位置
+    }
 }
