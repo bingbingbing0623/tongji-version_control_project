@@ -30,6 +30,7 @@ import com.github.difflib.patch.Patch;
 import java.nio.charset.StandardCharsets; // 添加以使用UTF-8编码
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,10 +41,12 @@ public class VersionManager {
     private final Alarm alarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD); // 定时任务执行器
     private boolean saveWholeFiles = true; // 标记是否保存整个项目文件
     private boolean isBaseSave = false; // 标记初始版本是否保存
+    private boolean tryNewSave = false;
     private VirtualFile snapshotDirectory; // 记录snapshot文件夹位置
     private VirtualFile rootFileDirectory; // 记录根文件位置
     private String baseVersionDirectory; // 记录base版本位置
-    private VirtualFile timeStampedFolder;
+    private VirtualFile baseVersionPath; // 记录base版本路径
+    private VirtualFile timeStampedFolder; // 本轮的时间戳文件夹位置
 
 
     public VersionManager(Project project) {
@@ -74,8 +77,17 @@ public class VersionManager {
                 });
             } else {
                 // 后续保存时对比并生成差异文件
+                System.out.println("\n");
                 generateDiffFiles(projectRoot);
             }
+            ApplicationManager.getApplication().invokeLater(() -> {
+                try {
+                    FileDocumentManager.getInstance().saveAllDocuments();  // 保存所有未保存的文件
+                    System.out.println("保存成功"); // 打印日志，表示保存成功
+                } catch (Exception e) {
+                    System.err.println("保存失败：" + e.getMessage()); // 捕获异常，表示保存失败
+                }
+            });
 
         } else {
             System.out.println("无法找到项目根目录");
@@ -151,67 +163,131 @@ public class VersionManager {
         }
     }
 
+    public boolean findFileInDirectory(VirtualFile directory, String targetFileName) {
+        // 遍历当前目录下的所有文件和子目录
+        for (VirtualFile file : directory.getChildren()) {
+            if (file.getName().equals(targetFileName)) {
+                return true;
+            }
+            if (file.isDirectory()) {
+                // 如果是子目录，递归调用该函数
+                boolean result = findFileInDirectory(file, targetFileName);
+                if (result) {
+                    return true; // 如果在子目录中找到文件，返回 1
+                }
+            } else if (file.getName().equals(targetFileName)) {
+                // 如果文件名匹配，返回 1
+                return false;
+            }
+        }
+        // 如果遍历所有文件和子目录都未找到，返回 0
+        return false;
+    }
+
     // 生成文件差异并保存为 unified diff 格式
     private void generateDiffFiles(VirtualFile rootDirectory) {
-        boolean tag = true; // 用于记录
+        boolean echoTag = true; // 用于记录每一轮轮内的时间戳文件
         try {
             // 遍历项目根目录下的所有文件和子目录
             for (VirtualFile file : rootDirectory.getChildren()) {
-                // 对file进行判断，判断file是目录还是文件，并且不考虑.gitignore和.idea的变化
-                if (file.isDirectory() && !file.getName().equals("snapshot") && !file.getName().equals(".gitignore")&& !file.getName().equals(".idea")) {
-                    generateDiffFiles(file); // 递归遍历子目录
-                } else if (!file.isDirectory() && !file.getName().equals("snapshot") && !file.getName().equals(".gitignore")&& !file.getName().equals(".idea")) {
+                if(file.getName().equals("snapshot") || file.getName().equals(".gitignore") || file.getName().equals(".idea")){
+                    continue;
+                }
+                String relativePath = file.getPath().substring(rootFileDirectory.getPath().length() + 1);
+
+                // 用子序列来确定相对位置，方便后面确定originalFilePath
+                String originalFilePath = baseVersionDirectory + "/" + relativePath; // 原始文件路径
+                String currentFilePath = file.getPath(); // 当前文件路径
+                System.out.println("######当前文件内容: " + currentFilePath);
+                // 判断文件是否为新建的
+                System.out.println("######判断是否存在"+file.getName());
+                if (!isBaseSave || findFileInDirectory(baseVersionPath, file.getName())) {
                     // 将baseVersion保存
-                    if(!isBaseSave) {
+                    if (!isBaseSave) {
                         // 获取snapshot文件夹内的所有文件
                         VirtualFile[] snapshotFiles = snapshotDirectory.getChildren();
-                        // 现在获取baseVersion的directory,baseVersion就是snapshot文件夹最后一个文件
+                        // 现在获取baseVersion的directory, baseVersion就是snapshot文件夹最后一个文件
                         VirtualFile lastSnapshotFile = snapshotFiles.length > 0 ? snapshotFiles[snapshotFiles.length - 1] : null;
                         baseVersionDirectory = lastSnapshotFile.getPath();
+                        baseVersionPath = lastSnapshotFile;
                         isBaseSave = true;
                     }
-                        // 用子序列来确定相对位置，方便后面确定originalFilePath
-                    String relativePath = file.getPath().substring(rootFileDirectory.getPath().length() + 1);
-                    String originalFilePath = baseVersionDirectory + "/" + relativePath; // 原始文件路径
-                    String currentFilePath = file.getPath(); // 当前文件路径
-
-                    if (Files.exists(Paths.get( originalFilePath))) {
-                        List<String> originalLines = Files.readAllLines(Paths.get( originalFilePath));
-                        List<String> currentLines = Files.readAllLines(Paths.get(currentFilePath));
-                        // 获得当前版本和base版本的diff内容
-                        Patch<String> patch = DiffUtils.diff(originalLines, currentLines);
-                        System.out.println("######currentFilePath" +currentFilePath);
-                        System.out.println("######patch" +patch);
-                        if (!patch.getDeltas().isEmpty()) {
-                            // 如果有变化，生成 unified diff 文件
-                            String diffFileName = file.getName() + ".diff";
-                            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-                            // 创建相应的文件夹，并将diff文件写入文件夹当中
-                            boolean finalTag = tag;// 为了进入lambda函数
-                            WriteCommandAction.runWriteCommandAction(project, () -> {
-                                try {
-                                    if (!snapshotDirectory.exists()) {
-                                        System.out.println("snapshotDirectory 不存在: " + snapshotDirectory);
-                                    } else {
-                                        System.out.println("进来准备写了");
-                                        if(finalTag) {
-                                            timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
-                                        }
-                                        VirtualFile diffFile = timeStampedFolder.createChildData(this, diffFileName);
-                                        String diffContent = generateDiff(originalFilePath, currentFilePath, originalLines, patch);
-                                        FileUtil.writeToFile(new java.io.File(diffFile.getPath()), diffContent);
-                                        System.out.println("生成差异文件: " + diffFile.getPath());
-                                    }
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                                }
-                            });
+                    // 对file进行判断，判断file是目录还是文件，并且不考虑.gitignore和.idea的变化
+                    if (file.isDirectory() ) {
+                        generateDiffFiles(file); // 递归遍历子目录
+                        if (tryNewSave) {
+                            return;
                         }
-                        tag = false;
+                    } else if (!file.isDirectory() ) {
+                        if (Files.exists(Paths.get(originalFilePath))) {
+                            List<String> originalLines = Files.readAllLines(Paths.get(originalFilePath));
+                            List<String> currentLines = Files.readAllLines(Paths.get(currentFilePath));
+                            // 获得当前版本和base版本的diff内容
+                            Patch<String> patch = DiffUtils.diff(originalLines, currentLines);
+                            System.out.println("######originalFilePath: " + originalFilePath);
+                            System.out.println("######currentFilePath: " + currentFilePath);
+                            System.out.println("######现在的文件内容: " + currentLines);
+                            System.out.println("######patch: " + patch);
+                            if (!patch.getDeltas().isEmpty()) {
+                                System.out.println("######有改动了");
+                                // 如果有变化，生成 unified diff 文件
+                                String diffFileName = file.getName() + ".diff";
+                                String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+                                // 使用AtomicBoolean来替代echoTag
+                                AtomicBoolean finalTag = new AtomicBoolean(echoTag); // 替代finalTag
+                                WriteCommandAction.runWriteCommandAction(project, () -> {
+                                    try {
+                                        if (!snapshotDirectory.exists()) {
+                                            System.out.println("snapshotDirectory 不存在: " + snapshotDirectory);
+                                        } else {
+                                            System.out.println("进来准备写了");
+                                            if (finalTag.get()) {  // 使用finalTag.get()检查其值
+                                                timeStampedFolder = snapshotDirectory.createChildDirectory(this, timeStamp);
+                                                finalTag.set(false);  // 修改finalTag的值
+                                            }
+                                            System.out.println("timeStampedFolder"+timeStampedFolder);
+                                            VirtualFile diffFile = timeStampedFolder.createChildData(this, diffFileName);
+                                            String diffContent = generateDiff(originalFilePath, currentFilePath, originalLines, patch);
+                                            FileUtil.writeToFile(new java.io.File(diffFile.getPath()), diffContent);
+                                            System.out.println("生成差异文件: " + diffFile.getPath());
+                                        }
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                    }
+                                });
+                                // 由lumbda当中的finaltag确定是否修改echotag的值
+                                if(!finalTag.get()) {
+                                    echoTag = false; // 第一个diff生成后，时间戳文件夹固定
+                                    System.out.println("换了一次echotag现在是"+echoTag);
+                                }
+                            }
+                        }
+                    }
+                }
+                // 检测到当前项目有新增文件或者文件夹，终止当前生成diff文件，生成新的baseversion
+                else {
+                    System.out.println("#######检测到新增文件");
+                    System.out.println("#######baseaVersionDirectory: " + baseVersionDirectory);
+                    System.out.println("#######文件名"+file.getName());
+                    //删除当前的timeStampedFolder，终止当前，重置参数
+                    try {
+                        if (timeStampedFolder != null) {
+                            timeStampedFolder.delete(this); // 删除 timeStampedFolder 文件夹
+                            System.out.println("删除文件夹: " + timeStampedFolder.getPath());
+                        }
+                        // 重置相关的参数
+                        isBaseSave = false;
+                        baseVersionDirectory = null;
+                        echoTag = false;
+                        tryNewSave = true;
+                        saveWholeFiles = true;
+                        return;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        System.out.println("无法删除文件夹: " + timeStampedFolder.getPath());
                     }
                 }
             }
-
         } catch (IOException e) {
             e.printStackTrace();
             System.out.println("无法生成差异文件");
