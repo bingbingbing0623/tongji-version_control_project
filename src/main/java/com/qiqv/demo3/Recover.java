@@ -8,7 +8,7 @@ import java.util.List;
 //    这个类实现文件历史版本恢复
 //
 
-public class recover {
+public class Recover {
     public static void writeFile(List<String> content, String filePath) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
             for (String line : content) {

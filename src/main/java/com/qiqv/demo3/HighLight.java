@@ -7,7 +7,7 @@ import javax.swing.text.Highlighter;
 import java.awt.*;
 import java.util.List;
 
-public class highLight {
+public class HighLight {
     public static void highlightDifferences(List<String> file1Lines, List<String> file2Lines, List<String> diffLines, JTextArea textArea1, JTextArea textArea2) throws BadLocationException {
         Highlighter highlighter1 = textArea1.getHighlighter();
         Highlighter highlighter2 = textArea2.getHighlighter();

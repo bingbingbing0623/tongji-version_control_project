@@ -5,12 +5,12 @@ import com.intellij.openapi.vfs.VirtualFile;
 
 public class MainManager {
     private final VersionManager versionManager;
-    private final mainwindow mainwindow;
+    private final MainWindow mainwindow;
     private final MyFileListener myFileListener;
 
     public MainManager(Project project) {
         this.versionManager = new VersionManager(project);
-        this.mainwindow = new mainwindow();
+        this.mainwindow = new MainWindow();
         this.myFileListener = new MyFileListener(this.versionManager);//将versionManager引入，并实例化监听器
         this.myFileListener.registerListener(this.myFileListener);//注册监听器
     }

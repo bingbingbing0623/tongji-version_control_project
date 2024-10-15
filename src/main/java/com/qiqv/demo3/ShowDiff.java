@@ -1,18 +1,16 @@
 package com.qiqv.demo3;
-import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 //
 //这个类用于解析生成的diff文件
 
-public class showdiff {
+public class ShowDiff {
     public static class Diff {
         public String originalFilePath; // --- 后面的文件路径
         public String targetFilePath;   // +++ 后面的文件路径
