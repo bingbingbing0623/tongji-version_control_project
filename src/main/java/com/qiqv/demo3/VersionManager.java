@@ -18,7 +18,10 @@ import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -289,6 +292,50 @@ public class VersionManager {
                 }
 
 
+            }
+        });
+        // 创建右键菜单
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem recoverMenuItem = new JMenuItem("恢复文件");
+        popupMenu.add(recoverMenuItem);
+
+        // 添加鼠标监听器，用于检测右键点击
+        fileTree.addMouseListener(new MouseAdapter() {
+            public void mousePressed(MouseEvent e) {
+                // 检测是否是右键点击
+                if (SwingUtilities.isRightMouseButton(e)) {
+                    // 获取点击的节点
+                    TreePath path = fileTree.getPathForLocation(e.getX(), e.getY());
+                    if (path != null) {
+                        fileTree.setSelectionPath(path);
+                        DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
+
+                        // 确保选择的节点是 VirtualFile 对象
+                        if (selectedNode != null && selectedNode.getUserObject() instanceof VirtualFile) {
+                            VirtualFile selectedFile1 = (VirtualFile) selectedNode.getUserObject();
+
+                            // 在鼠标位置显示右键菜单
+                            popupMenu.show(fileTree, e.getX(), e.getY());
+
+                            // 给“恢复文件”菜单项添加事件监听器
+                            recoverMenuItem.addActionListener(event -> {
+                                // 解析了 .diff 文件获取了路径
+                                String diffFilePath = selectedFile1.getPath();
+                                // 合并文件内容
+                                showdiff.Diff diff = showdiff.parseDiffFile(diffFilePath);
+                                String originalContent = showdiff.readFileContent(diff.originalFilePath);
+                                String newContent = showdiff.applyDiff(originalContent, diff.diffLines);
+                                List<String> newContentLine2 = Arrays.asList(newContent.split("\n"));
+
+                                // 打印或处理 selectedFile 对象
+                                System.out.println("选中的文件: " + selectedFile1.getPath()+"wenjianlujing"+diff.targetFilePath);
+
+                                // 执行文件恢复操作
+                                recover.writeFile(newContentLine2, diff.targetFilePath);
+                            });
+                        }
+                    }
+                }
             }
         });
 
